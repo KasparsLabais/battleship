@@ -1,0 +1,24 @@
+{
+    "name": "partygames/battleship",
+    "autoload": {
+        "psr-4": {
+            "PartyGames\\Battleship\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "kvanags",
+            "email": "slaviktheforeigner@gmail.com"
+        }
+    ],
+    "extra" : {
+        "laravel": {
+            "providers": [
+                "PartyGames\\Battleship\\BattleshipServiceProvider"
+            ]
+        }
+    },
+    "require-dev": {
+        "orchestra/testbench": "^8.14"
+    }
+}
