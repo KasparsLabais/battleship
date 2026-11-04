@@ -14,7 +14,7 @@ return new class extends Migration
             $table->timestamp('turn_started_at')->nullable()->after('turn_user_id');
             $table->unsignedTinyInteger('host_missed')->default(0)->after('turn_started_at');  // consecutive missed turns
             $table->unsignedTinyInteger('guest_missed')->default(0)->after('host_missed');
-            $table->string('ended_reason', 16)->nullable()->after('winner_user_id');            // sunk | forfeit
+            $table->string('ended_reason', 16)->nullable()->after('winner_user_id');            // sunk | forfeit | surrender
         });
     }
 

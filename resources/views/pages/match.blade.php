@@ -101,6 +101,14 @@
                     </div>
                     <button type="button" id="ready-btn" disabled class="{{ $btn }} bg-main-accent text-white shadow-[5px_5px_0_0_#14323B] px-6 py-3">Ready</button>
                     <div id="place-status" class="fira-sans text-sm text-main-dark/70 border-2 border-main-dark px-2 py-1.5"></div>
+                    <div class="surrender-box flex flex-wrap items-center justify-end gap-2" data-id="place">
+                        <button type="button" class="surrender-ask fira-sans font-bold uppercase text-xs tracking-wide bg-white text-main-dark border-4 border-main-dark shadow-[3px_3px_0_0_#14323B] px-3 py-2 hover:bg-main-light">🏳 Surrender</button>
+                        <span class="surrender-confirm hidden items-center gap-2">
+                            <span class="fira-sans text-sm font-bold text-main-dark">Give up this match?</span>
+                            <button type="button" class="surrender-yes fira-sans font-bold uppercase text-xs tracking-wide bg-main-accent text-white border-4 border-main-dark shadow-[3px_3px_0_0_#14323B] px-3 py-2">Yes, surrender</button>
+                            <button type="button" class="surrender-no fira-sans font-bold uppercase text-xs tracking-wide bg-white text-main-dark border-4 border-main-dark shadow-[3px_3px_0_0_#14323B] px-3 py-2">Keep playing</button>
+                        </span>
+                    </div>
                 </div>
             </div>
 
@@ -142,6 +150,15 @@
                     <span class="fira-sans text-[10px] uppercase tracking-widest text-main-dark/50">Battle log</span>
                     <div id="log" class="mt-2 flex flex-col gap-1 fira-sans text-sm text-main-dark max-h-32 overflow-y-auto"></div>
                 </div>
+                {{-- Give up: the opponent wins straight away (two-step so it can't be hit by accident). --}}
+                <div class="surrender-box flex flex-wrap items-center justify-end gap-2" data-id="battle">
+                        <button type="button" class="surrender-ask fira-sans font-bold uppercase text-xs tracking-wide bg-white text-main-dark border-4 border-main-dark shadow-[3px_3px_0_0_#14323B] px-3 py-2 hover:bg-main-light">🏳 Surrender</button>
+                        <span class="surrender-confirm hidden items-center gap-2">
+                            <span class="fira-sans text-sm font-bold text-main-dark">Give up this match?</span>
+                            <button type="button" class="surrender-yes fira-sans font-bold uppercase text-xs tracking-wide bg-main-accent text-white border-4 border-main-dark shadow-[3px_3px_0_0_#14323B] px-3 py-2">Yes, surrender</button>
+                            <button type="button" class="surrender-no fira-sans font-bold uppercase text-xs tracking-wide bg-white text-main-dark border-4 border-main-dark shadow-[3px_3px_0_0_#14323B] px-3 py-2">Keep playing</button>
+                        </span>
+                    </div>
             </div>
 
             {{-- ========================= RESULT ========================= --}}
@@ -231,6 +248,8 @@
                 if (d.server_now) clockOffset = d.server_now - Date.now();
                 if (d.status === 'lobby' || !d.role) { renderLobby(); show('lobby'); return; }
                 if (d.status === 'placing') { renderPlacementStatus(); show('place'); return; }
+                // Surrendered before the battle started: no boards to show, straight to the result.
+                if (d.status === 'finished' && !(d.host_ready && d.guest_ready)) { hideSurrender(); show('battle'); $('battle-phase').classList.add('hidden'); endGame(); return; }
                 // playing / finished
                 if (lastShotId === null) lastShotId = d.shots.length ? d.shots[d.shots.length - 1].id : 0; // reload: don't replay history
                 d.shots.filter(s => s.id > lastShotId).forEach(animateShot);
@@ -532,26 +551,42 @@
             let ended = false;
             function endGame() {
                 if (ended) return; ended = true;
-                drawBattle();
+                hideSurrender();
+                if (S.host_ready && S.guest_ready) drawBattle();
                 setTimeout(() => {
                     $('over-phase').classList.remove('hidden');
                     const win = S.winner_user_id == S.me;
                     const card = $('result-card');
                     card.classList.add(win ? 'bg-pop' : 'bg-main-dark');
-                    $('result-emoji').textContent = win ? '🏆' : '💀';
-                    $('result-title').textContent = win ? 'Victory!' : (S.ended_reason === 'forfeit' ? 'Forfeited' : 'Fleet Lost');
+                    $('result-title').textContent = win ? 'Victory!' : (S.ended_reason === 'surrender' ? 'Surrendered' : (S.ended_reason === 'forfeit' ? 'Forfeited' : 'Fleet Lost'));
+                    $('result-emoji').textContent = win ? '🏆' : (S.ended_reason === 'surrender' ? '🏳️' : '💀');
                     $('result-title').classList.add(win ? 'text-main-dark' : 'text-white');
                     const mineShots = S.shots.filter(s => s.by === S.role);
                     const hits = mineShots.filter(s => s.result === 'hit' || s.result === 'sunk').length;
                     const stats = $('result-stats');
                     const fired = mineShots.filter(s => s.result !== 'timeout');
-                    const how = S.ended_reason === 'forfeit'
+                    const how = S.ended_reason === 'surrender'
+                        ? (win ? oppName() + ' surrendered' : 'You surrendered')
+                        : S.ended_reason === 'forfeit'
                         ? (win ? oppName() + ' forfeited after ' + S.max_missed + ' missed turns in a row' : 'You forfeited after ' + S.max_missed + ' missed turns in a row')
                         : (win ? 'You sank ' + oppName() + "'s fleet" : oppName() + ' sank your fleet');
-                    stats.textContent = how + ' · ' + fired.length + ' shots · ' + hits + ' hits · ' + (fired.length ? Math.round(hits / fired.length * 100) : 0) + '% accuracy';
+                    stats.textContent = how + (fired.length ? ' · ' + fired.length + ' shots · ' + hits + ' hits · ' + Math.round(hits / fired.length * 100) + '% accuracy' : '');
                     stats.classList.add(win ? 'text-main-dark/70' : 'text-white/70');
                 }, 400);
             }
+
+            /* ---------------- surrender ---------------- */
+            document.querySelectorAll('.surrender-box').forEach(box => {
+                const ask = box.querySelector('.surrender-ask'), confirmRow = box.querySelector('.surrender-confirm');
+                const toggle = (open) => { ask.classList.toggle('hidden', open); confirmRow.classList.toggle('hidden', !open); confirmRow.classList.toggle('flex', open); };
+                ask.addEventListener('click', () => toggle(true));
+                box.querySelector('.surrender-no').addEventListener('click', () => toggle(false));
+                box.querySelector('.surrender-yes').addEventListener('click', (e) => {
+                    e.currentTarget.disabled = true;
+                    api('/surrender', 'POST', {}).then(() => poll());
+                });
+            });
+            function hideSurrender() { document.querySelectorAll('.surrender-box').forEach(b => b.classList.add('hidden')); }
 
             /* ---------------- boot ---------------- */
             autoFleet(); placeIdx = FLEET.length; renderPlacement();

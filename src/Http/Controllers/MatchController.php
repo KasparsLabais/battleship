@@ -224,6 +224,24 @@ class MatchController extends Controller
         });
     }
 
+    // Give up: the opponent wins straight away. Allowed while placing or playing.
+    public function surrender($code)
+    {
+        return DB::transaction(function () use ($code) {
+            $match = BtlMatch::where('code', $code)->lockForUpdate()->firstOrFail();
+            $role = $match->roleOf(Auth::id());
+            if (!$role || !in_array($match->status, ['placing', 'playing'], true)) {
+                return new JsonResponse(['success' => false, 'message' => 'There\'s no match to surrender.'], 409);
+            }
+            $match->status = 'finished';
+            $match->winner_user_id = $match->userIdOf(BtlMatch::other($role));
+            $match->ended_reason = 'surrender';
+            $match->save();
+
+            return new JsonResponse(['success' => true]);
+        });
+    }
+
     public function state($code)
     {
         $match = BtlMatch::where('code', $code)->firstOrFail();

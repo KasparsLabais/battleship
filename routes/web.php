@@ -17,6 +17,7 @@ Route::group(['middleware' => ['web']], function () {
         Route::post('/' . config('battleship.prefix') . '/match/{code}/join', 'MatchController@join')->where('code', '[A-Z0-9]{8}');
         Route::post('/' . config('battleship.prefix') . '/match/{code}/place', 'MatchController@place')->where('code', '[A-Z0-9]{8}');
         Route::post('/' . config('battleship.prefix') . '/match/{code}/fire', 'MatchController@fire')->where('code', '[A-Z0-9]{8}');
+        Route::post('/' . config('battleship.prefix') . '/match/{code}/surrender', 'MatchController@surrender')->where('code', '[A-Z0-9]{8}');
         Route::get('/' . config('battleship.prefix') . '/match/{code}/state', 'MatchController@state')->where('code', '[A-Z0-9]{8}');
     });
 });
