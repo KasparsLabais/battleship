@@ -17,7 +17,10 @@
                     @if($mines)<span class="inline-block border-2 border-main-dark bg-pop px-2 py-0.5 russo text-[10px] uppercase tracking-wide text-main-dark">Mines</span>@endif
                     <span class="inline-block border-2 border-main-dark bg-main-light px-2 py-0.5 russo text-[10px] uppercase tracking-wide text-main-dark">{{ $touch ? 'Ships can touch' : 'No touching' }}</span>
                 </div>
+                <div class="flex items-center gap-2">
+                <button type="button" id="sound-btn" aria-pressed="true" class="fira-sans font-bold uppercase text-xs tracking-wide bg-white text-main-dark border-4 border-main-dark shadow-[3px_3px_0_0_#14323B] px-3 py-2 transition-all duration-100 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[5px_5px_0_0_#14323B] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[0px_0px_0_0_#14323B]">Sound: On</button>
                 <a href="/battleship" class="fira-sans font-bold uppercase text-xs tracking-wide bg-white text-main-dark border-4 border-main-dark shadow-[3px_3px_0_0_#14323B] px-4 py-2 transition-all duration-100 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[5px_5px_0_0_#14323B] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[0px_0px_0_0_#14323B]">&larr; Leave</a>
+                </div>
             </div>
 
             {{-- ========================= PLACEMENT ========================= --}}
@@ -67,19 +70,21 @@
                             <span class="russo uppercase tracking-widest text-white text-xs">Enemy Waters</span>
                             <span id="enemy-left" class="ml-auto fira-sans text-white text-xs font-bold"></span>
                         </div>
-                        <div class="p-3 md:p-4 flex justify-center">
+                        <div class="relative p-3 md:p-4 flex justify-center">
                             <div id="enemy-board" class="bship-board"></div>
+                            <div id="enemy-callout" class="shot-callout" aria-live="polite"></div>
                         </div>
                     </div>
                     {{-- Your fleet --}}
-                    <div class="bg-white border-4 border-main-dark shadow-[6px_6px_0_0_#14323B]">
+                    <div id="player-window" class="relative bg-white border-4 border-main-dark shadow-[6px_6px_0_0_#14323B]">
                         <div class="flex items-center gap-2 bg-brand px-4 py-2.5">
                             <span class="w-3 h-3 rounded-full bg-white shrink-0"></span>
                             <span class="russo uppercase tracking-widest text-white text-xs">Your Fleet</span>
                             <span id="player-left" class="ml-auto fira-sans text-white text-xs font-bold"></span>
                         </div>
-                        <div class="p-3 md:p-4 flex justify-center">
+                        <div class="relative p-3 md:p-4 flex justify-center">
                             <div id="player-board" class="bship-board"></div>
+                            <div id="player-callout" class="shot-callout" aria-live="polite"></div>
                         </div>
                     </div>
                 </div>
@@ -122,6 +127,23 @@
         .cell-sunk .mark { background: #fff; clip-path: polygon(20% 0,0 20%,30% 50%,0 80%,20% 100%,50% 70%,80% 100%,100% 80%,70% 50%,100% 20%,80% 0,50% 30%); }
         .cell-mine   { background: #FFB900; }
         .cell-mine .mark { background: #14323B; clip-path: polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%); }
+        /* Shot feedback: impact on the newest shot, stamped callout, red flash when you're hit. */
+        .cell-new.cell-hit, .cell-new.cell-sunk, .cell-new.cell-mine { animation: bship-impact 0.5s ease-out; }
+        .cell-new.cell-miss { animation: bship-splash 0.6s ease-out; }
+        @keyframes bship-impact { 0% { transform: scale(1.5); filter: brightness(2); } 60% { transform: scale(0.9); } 100% { transform: scale(1); filter: none; } }
+        @keyframes bship-splash { 0% { box-shadow: 0 0 0 0 rgba(255,255,255,.9); } 100% { box-shadow: 0 0 0 14px rgba(255,255,255,0); } }
+        .shot-callout { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; opacity: 0; }
+        .shot-callout span { font-family: 'Russo One', ui-sans-serif, sans-serif; text-transform: uppercase; letter-spacing: .08em; font-size: clamp(1.75rem, 6vw, 3.25rem); padding: .2em .6em; border: 4px solid #14323B; box-shadow: 6px 6px 0 0 #14323B; }
+        .shot-callout.is-on { animation: bship-callout 1.1s ease-out both; }
+        @keyframes bship-callout { 0% { opacity: 0; transform: scale(2) rotate(-8deg); } 15% { opacity: 1; transform: scale(1) rotate(-4deg); } 75% { opacity: 1; transform: scale(1) rotate(-4deg); } 100% { opacity: 0; transform: scale(.95) rotate(-4deg); } }
+        #player-window.is-hit { animation: bship-shake 0.5s ease-in-out; }
+        #player-window.is-hit::after { content: ''; position: absolute; inset: 0; background: #E62727; pointer-events: none; animation: bship-flash 0.7s ease-out both; }
+        @keyframes bship-flash { 0% { opacity: .65; } 100% { opacity: 0; } }
+        @keyframes bship-shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-8px); } 40% { transform: translateX(7px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(3px); } }
+        @media (prefers-reduced-motion: reduce) {
+            .cell-new, #player-window.is-hit { animation: none !important; }
+            .shot-callout.is-on { animation-duration: 0.01s; animation-delay: 0s; opacity: 1; }
+        }
         .cell-preview-ok  { outline: 3px solid #22c55e; outline-offset: -3px; }
         .cell-preview-bad { outline: 3px solid #E62727; outline-offset: -3px; }
     </style>
@@ -133,7 +155,62 @@
             const SIZE = CFG.size;
             const FLEET = FLEETS[CFG.ships] || FLEETS[5];
             const MINE_COUNT = CFG.mines ? Math.max(2, Math.round(SIZE * SIZE * 0.04)) : 0;
+            // Pacing: how long a shot's result stays on screen before play moves on,
+            // and how long the enemy "aims" before firing.
+            const RESULT_PAUSE = 1300;
+            const AIM_PAUSE = 800;
             const key = (r, c) => r + ',' + c;
+
+            /* ---------------- sound ---------------- */
+            const SFX = {
+                hit: new Audio('/vendor/battleship-game/sounds/shot_hit.wav'),
+                miss: new Audio('/vendor/battleship-game/sounds/shot_missed.wav'),
+            };
+            Object.values(SFX).forEach(a => { a.preload = 'auto'; });
+            let muted = false;
+            try { muted = localStorage.getItem('bship_muted') === '1'; } catch (e) {}
+            function playSfx(name) {
+                if (muted || !SFX[name]) return;
+                const a = SFX[name].cloneNode(); // clone so quick shots can overlap
+                a.volume = 0.8;
+                a.play().catch(() => {});
+            }
+            const soundBtn = document.getElementById('sound-btn');
+            function paintSound() {
+                soundBtn.textContent = muted ? 'Sound: Off' : 'Sound: On';
+                soundBtn.setAttribute('aria-pressed', muted ? 'false' : 'true');
+                soundBtn.classList.toggle('opacity-60', muted);
+            }
+            soundBtn.addEventListener('click', () => {
+                muted = !muted;
+                try { localStorage.setItem('bship_muted', muted ? '1' : '0'); } catch (e) {}
+                paintSound();
+            });
+            paintSound();
+
+            /* ---------------- shot feedback ---------------- */
+            const CALLOUT_STYLE = {
+                hit:  'background:#E62727;color:#fff',
+                sunk: 'background:#7f1414;color:#fff',
+                miss: 'background:#fff;color:#14323B',
+                mine: 'background:#FFB900;color:#14323B',
+            };
+            function callout(which, text, tag) {
+                const el = document.getElementById(which + '-callout');
+                el.innerHTML = '';
+                const span = document.createElement('span');
+                span.textContent = text;
+                span.style.cssText = CALLOUT_STYLE[tag] || CALLOUT_STYLE.miss;
+                el.appendChild(span);
+                el.classList.remove('is-on'); void el.offsetWidth; el.classList.add('is-on');
+            }
+            // Red flash + shake on your fleet's window whenever your ships take damage.
+            function flashPlayerHit() {
+                const w = document.getElementById('player-window');
+                w.classList.remove('is-hit'); void w.offsetWidth; w.classList.add('is-hit');
+            }
+            function feedback(tag) { playSfx(tag === 'miss' ? 'miss' : 'hit'); }
+            const lastShot = { enemy: null, player: null };
             const inB = (r, c) => r >= 0 && c >= 0 && r < SIZE && c < SIZE;
             // Ship ids start at 0, so test occupancy against undefined (a plain
             // truthiness check treated ship #0 as empty water and let ships overlap).
@@ -234,7 +311,7 @@
             }
 
             /* ---------------- rendering ---------------- */
-            function renderBoard(el, board, { reveal, clickable, onFire }) {
+            function renderBoard(el, board, { reveal, clickable, onFire, lastKey }) {
                 el.style.gridTemplateColumns = 'repeat(' + SIZE + ', minmax(0, 1fr))';
                 el.innerHTML = '';
                 for (let r = 0; r < SIZE; r++) {
@@ -253,6 +330,7 @@
                         else if (hasShip && reveal) cls = 'cell-ship';
                         else if (clickable) cls = 'cell-fire';
                         cell.classList.add(cls);
+                        if (lastKey === k) cell.classList.add('cell-new');
                         if (cls === 'cell-miss' || cls === 'cell-hit' || cls === 'cell-sunk' || cls === 'cell-mine') {
                             const m = document.createElement('span'); m.className = 'mark'; cell.appendChild(m);
                         }
@@ -375,30 +453,41 @@
                 counts();
             }
             function drawBattle() {
-                renderBoard(enemyEl, enemyBoard, { reveal: false, clickable: phase === 'battle' && !locked, onFire: playerFire });
-                renderBoard(playerEl, playerBoard, { reveal: true, clickable: false });
+                renderBoard(enemyEl, enemyBoard, { reveal: false, clickable: phase === 'battle' && !locked, onFire: playerFire, lastKey: lastShot.enemy });
+                renderBoard(playerEl, playerBoard, { reveal: true, clickable: false, lastKey: lastShot.player });
             }
 
             function playerFire(r, c) {
                 if (locked || phase !== 'battle') return;
                 const res = fire(enemyBoard, playerBoard, r, c);
                 if (!res) return;
+                lastShot.player = null;
+                locked = true; // no more shots until the enemy has answered
                 shotsFired++;
-                if (res.tag === 'hit') { shotsHit++; log('Hit at ' + coord(r, c) + '!', 'you'); }
-                else if (res.tag === 'sunk') { shotsHit++; log('Sunk an enemy ship at ' + coord(r, c) + '! 🔥', 'you'); }
+                lastShot.enemy = key(r, c);
+                if (res.tag === 'hit') { shotsHit++; log('Hit at ' + coord(r, c) + '!', 'you'); callout('enemy', 'Hit!', 'hit'); }
+                else if (res.tag === 'sunk') { shotsHit++; log('Sunk an enemy ship at ' + coord(r, c) + '! 🔥', 'you'); callout('enemy', 'Sunk!', 'sunk'); }
                 else if (res.tag === 'mine') {
                     log('Hit a <b>mine</b> at ' + coord(r, c) + ' — it backfired on your fleet!', 'you');
-                    if (res.seg) log('Your ship took damage at ' + coord(res.seg.r, res.seg.c) + (res.seg.sunk ? ' and sank!' : '.'), 'you');
-                } else { log('Miss at ' + coord(r, c) + '.', 'you'); }
+                    callout('enemy', 'Mine!', 'mine');
+                    if (res.seg) {
+                        lastShot.player = key(res.seg.r, res.seg.c);
+                        log('Your ship took damage at ' + coord(res.seg.r, res.seg.c) + (res.seg.sunk ? ' and sank!' : '.'), 'you');
+                        flashPlayerHit();
+                    }
+                } else { log('Miss at ' + coord(r, c) + '.', 'you'); callout('enemy', 'Miss', 'miss'); }
+                feedback(res.tag);
                 drawBattle(); counts();
-                if (checkOver()) return;
-                locked = true;
-                setBanner('Enemy is taking aim…', 'bg-main-accent text-white');
-                drawBattle();
-                setTimeout(aiTurn, 700);
+                // Let the result sink in before the game moves on.
+                if (gameOutcome()) { setTimeout(() => endGame(gameOutcome()), RESULT_PAUSE); return; }
+                setTimeout(() => {
+                    setBanner('Enemy is taking aim…', 'bg-main-accent text-white');
+                    setTimeout(aiTurn, AIM_PAUSE);
+                }, RESULT_PAUSE);
             }
 
             function aiTurn() {
+                lastShot.enemy = null; // your last shot already played its animation
                 let r, c;
                 // hunt queue first
                 while (aiQueue.length) {
@@ -415,26 +504,35 @@
                     [r, c] = free[Math.floor(Math.random() * free.length)];
                 }
                 const res = fire(playerBoard, enemyBoard, r, c);
+                lastShot.player = key(r, c);
                 if (res.tag === 'hit' || res.tag === 'sunk') {
                     log('Hit your fleet at ' + coord(r, c) + (res.tag === 'sunk' ? ' — ship down!' : '.'), 'enemy');
+                    callout('player', res.tag === 'sunk' ? 'Ship down!' : "You're hit!", res.tag);
+                    flashPlayerHit();
                     if (res.tag === 'hit') [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dr, dc]) => { if (inB(r+dr, c+dc)) aiQueue.push(key(r+dr, c+dc)); });
                     else aiQueue.length = 0;
                 } else if (res.tag === 'mine') {
                     log('Struck a <b>mine</b> at ' + coord(r, c) + ' — the blast hit its own fleet!', 'enemy');
+                    callout('player', 'Enemy hit a mine!', 'mine');
                 } else {
                     log('Missed at ' + coord(r, c) + '.', 'enemy');
+                    callout('player', 'Enemy missed', 'miss');
                 }
+                feedback(res.tag);
                 drawBattle(); counts();
-                if (checkOver()) return;
-                locked = false;
-                setBanner('Your turn — fire at will', 'bg-main-dark text-white');
-                drawBattle();
+                if (gameOutcome()) { setTimeout(() => endGame(gameOutcome()), RESULT_PAUSE); return; }
+                setTimeout(() => {
+                    locked = false;
+                    lastShot.player = null;
+                    setBanner('Your turn — fire at will', 'bg-main-dark text-white');
+                    drawBattle();
+                }, RESULT_PAUSE);
             }
 
-            function checkOver() {
-                if (fleetSunk(enemyBoard)) { endGame('win'); return true; }
-                if (fleetSunk(playerBoard)) { endGame('lose'); return true; }
-                return false;
+            function gameOutcome() {
+                if (fleetSunk(enemyBoard)) return 'win';
+                if (fleetSunk(playerBoard)) return 'lose';
+                return null;
             }
 
             function endGame(outcome) {
