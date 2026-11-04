@@ -106,7 +106,14 @@
 
             {{-- ========================= BATTLE ========================= --}}
             <div id="battle-phase" class="hidden flex-col gap-6">
-                <div id="turn-banner" class="bg-main-dark text-white border-4 border-main-dark shadow-[4px_4px_0_0_#14323B] px-5 py-3 russo uppercase tracking-widest text-sm text-center"></div>
+                <div>
+                    <div id="turn-banner" class="bg-main-dark text-white border-4 border-main-dark shadow-[4px_4px_0_0_#14323B] px-5 py-3 russo uppercase tracking-widest text-sm text-center"></div>
+                    {{-- Turn timer: runs out -> turn skipped; too many in a row -> forfeit --}}
+                    <div class="h-3 bg-white border-4 border-t-0 border-main-dark overflow-hidden">
+                        <div id="turn-bar" class="h-full bg-green-500" style="width:100%; transition: width 0.25s linear;"></div>
+                    </div>
+                    <p id="missed-warning" class="hidden mt-2 fira-sans text-sm font-bold text-main-accent text-center"></p>
+                </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="bg-white border-4 border-main-dark shadow-[6px_6px_0_0_#14323B]">
                         <div class="flex items-center gap-2 bg-main-accent px-4 py-2.5">
@@ -221,6 +228,7 @@
 
             function apply(d) {
                 S = d;
+                if (d.server_now) clockOffset = d.server_now - Date.now();
                 if (d.status === 'lobby' || !d.role) { renderLobby(); show('lobby'); return; }
                 if (d.status === 'placing') { renderPlacementStatus(); show('place'); return; }
                 // playing / finished
@@ -400,6 +408,7 @@
             function boards() {
                 const enemy = {}, mine = {};
                 S.shots.forEach(s => {
+                    if (s.result === 'timeout') return;
                     if (s.by === S.role) {
                         enemy[key(s.r, s.c)] = s.result;
                         if (s.backfire && s.backfire.r !== undefined) mine[key(s.backfire.r, s.backfire.c)] = 'hit';
@@ -449,12 +458,32 @@
                 $('player-left').textContent = left + ' hull left';
                 $('enemy-left').textContent = Math.max(0, enemyLeft) + ' hull left';
                 $('enemy-name').textContent = oppName();
-                const banner = $('turn-banner');
-                if (S.status === 'finished') { banner.textContent = 'Battle over'; setBanner('bg-main-dark text-white'); }
-                else if (S.my_turn) { banner.textContent = 'Your turn — fire at will'; setBanner('bg-main-dark text-white'); }
-                else { banner.textContent = oppName() + ' is taking aim…'; setBanner('bg-main-accent text-white'); }
+                updateBanner();
+                const myMissed = S.missed ? S.missed[S.role] : 0;
+                const warn = $('missed-warning');
+                warn.classList.toggle('hidden', !(S.status === 'playing' && myMissed > 0));
+                warn.textContent = '⚠ You\'ve missed ' + myMissed + ' turn' + (myMissed === 1 ? '' : 's') + ' in a row — miss ' + S.max_missed + ' and you forfeit.';
                 if (S.my_turn && Date.now() < busyUntil) setTimeout(drawBattle, busyUntil - Date.now() + 20);
             }
+            // Banner text + countdown, refreshed by a ticker between polls.
+            let clockOffset = 0; // server clock - local clock
+            function updateBanner() {
+                if (!S || !$('turn-banner')) return;
+                const banner = $('turn-banner'), bar = $('turn-bar');
+                if (S.status !== 'playing') { banner.textContent = 'Battle over'; setBanner('bg-main-dark text-white'); bar.style.width = '0%'; return; }
+                const left = Math.max(0, Math.ceil((S.turn_deadline - (Date.now() + clockOffset)) / 1000));
+                const pct = Math.max(0, Math.min(100, (left / S.turn_seconds) * 100));
+                bar.style.width = pct + '%';
+                bar.className = 'h-full ' + (pct <= 20 ? 'bg-main-accent' : (pct <= 50 ? 'bg-pop' : 'bg-green-500'));
+                if (S.my_turn) {
+                    banner.textContent = 'Your turn — fire at will · ' + left + 's';
+                    setBanner(left <= 10 ? 'bg-main-accent text-white' : 'bg-main-dark text-white');
+                } else {
+                    banner.textContent = oppName() + ' is taking aim… ' + left + 's';
+                    setBanner('bg-brand text-white');
+                }
+            }
+            setInterval(updateBanner, 250);
             function setBanner(colours) {
                 $('turn-banner').className = 'border-4 border-main-dark shadow-[4px_4px_0_0_#14323B] px-5 py-3 russo uppercase tracking-widest text-sm text-center ' + colours;
             }
@@ -474,6 +503,12 @@
             function animateShot(s) {
                 const mineShot = s.by === S.role;
                 busyUntil = Date.now() + RESULT_PAUSE;
+                if (s.result === 'timeout') {
+                    if (mineShot) { callout('enemy', "Time's up!", 'mine'); log('Ran out of time — turn skipped.', true); }
+                    else { callout('player', "Their time's up", 'mine'); log('Ran out of time — turn skipped.', false); }
+                    playSfx('miss');
+                    return;
+                }
                 if (mineShot) {
                     lastKey.enemy = key(s.r, s.c);
                     if (s.result === 'hit') { callout('enemy', 'Hit!', 'hit'); log('Hit at ' + coord(s.r, s.c) + '!', true); }
@@ -488,8 +523,8 @@
                     if (s.result === 'hit' || s.result === 'sunk') {
                         callout('player', s.result === 'sunk' ? 'Ship down!' : "You're hit!", s.result); flashPlayerHit();
                         log('Hit your fleet at ' + coord(s.r, s.c) + (s.result === 'sunk' ? ' — ship down!' : '.'), false);
-                    } else if (s.result === 'mine') { callout('player', oppName() + ' hit a mine!', 'mine'); log('Struck a <b>mine</b> — the blast hit their own fleet!', false); }
-                    else { callout('player', oppName() + ' missed', 'miss'); log('Missed at ' + coord(s.r, s.c) + '.', false); }
+                    } else if (s.result === 'mine') { callout('player', 'They hit a mine!', 'mine'); log('Struck a <b>mine</b> — the blast hit their own fleet!', false); }
+                    else { callout('player', 'They missed', 'miss'); log('Missed at ' + coord(s.r, s.c) + '.', false); }
                 }
                 playSfx(s.result);
             }
@@ -504,12 +539,16 @@
                     const card = $('result-card');
                     card.classList.add(win ? 'bg-pop' : 'bg-main-dark');
                     $('result-emoji').textContent = win ? '🏆' : '💀';
-                    $('result-title').textContent = win ? 'Victory!' : 'Fleet Lost';
+                    $('result-title').textContent = win ? 'Victory!' : (S.ended_reason === 'forfeit' ? 'Forfeited' : 'Fleet Lost');
                     $('result-title').classList.add(win ? 'text-main-dark' : 'text-white');
                     const mineShots = S.shots.filter(s => s.by === S.role);
                     const hits = mineShots.filter(s => s.result === 'hit' || s.result === 'sunk').length;
                     const stats = $('result-stats');
-                    stats.textContent = (win ? 'You sank ' : oppName() + ' sank ') + (win ? oppName() + "'s fleet" : 'your fleet') + ' · ' + mineShots.length + ' shots · ' + hits + ' hits · ' + (mineShots.length ? Math.round(hits / mineShots.length * 100) : 0) + '% accuracy';
+                    const fired = mineShots.filter(s => s.result !== 'timeout');
+                    const how = S.ended_reason === 'forfeit'
+                        ? (win ? oppName() + ' forfeited after ' + S.max_missed + ' missed turns in a row' : 'You forfeited after ' + S.max_missed + ' missed turns in a row')
+                        : (win ? 'You sank ' + oppName() + "'s fleet" : oppName() + ' sank your fleet');
+                    stats.textContent = how + ' · ' + fired.length + ' shots · ' + hits + ' hits · ' + (fired.length ? Math.round(hits / fired.length * 100) : 0) + '% accuracy';
                     stats.classList.add(win ? 'text-main-dark/70' : 'text-white/70');
                 }, 400);
             }

@@ -21,12 +21,29 @@ use PartyGames\GameApi\Models\User;
  *
  * Shot log entries: { id, by: 'host'|'guest', r, c, result: miss|hit|sunk|mine,
  * backfire: {r, c, sunk}|null }. A shot by X targets the other player's board;
- * a mine's backfire damages X's own fleet.
+ * a mine's backfire damages X's own fleet. A turn that runs out of time is
+ * logged as { by, r: null, c: null, result: 'timeout' }.
+ *
+ * Turn timer: each turn lasts turn_seconds (config). Running out skips the turn;
+ * after max_missed_turns missed turns in a row that player forfeits. Missed turns are
+ * settled whenever either player polls or fires, so a closed tab can't stall
+ * the match.
  */
 class MatchController extends Controller
 {
     // Segment lengths per fleet size (same as the setup screen and VS PC).
     private const FLEETS = [3 => [5, 4, 3], 4 => [5, 4, 3, 2], 5 => [5, 4, 3, 3, 2], 6 => [5, 4, 3, 3, 2, 2], 7 => [5, 4, 4, 3, 3, 2, 2]];
+
+    // Turn timer (config battleship.turn_seconds / max_missed_turns).
+    private function turnSeconds(): int
+    {
+        return max(5, (int) config('battleship.turn_seconds', 30));
+    }
+
+    private function maxMissed(): int
+    {
+        return max(1, (int) config('battleship.max_missed_turns', 4));
+    }
 
     public function create(Request $request)
     {
@@ -106,6 +123,7 @@ class MatchController extends Controller
                 ] : ['host' => [], 'guest' => []];
                 $match->status = 'playing';
                 $match->turn_user_id = random_int(0, 1) ? $match->host_user_id : $match->guest_user_id;
+                $match->turn_started_at = now();
             }
             $match->save();
 
@@ -120,6 +138,12 @@ class MatchController extends Controller
             $role = $match->roleOf(Auth::id());
             if (!$role || $match->status !== 'playing') {
                 return new JsonResponse(['success' => false, 'message' => 'The match isn\'t in play.'], 409);
+            }
+            if ($this->settleTimeouts($match)) {
+                $match->save();
+                if ($match->status !== 'playing') {
+                    return new JsonResponse(['success' => false, 'message' => 'The match is over.'], 409);
+                }
             }
             if ((int) $match->turn_user_id !== (int) Auth::id()) {
                 return new JsonResponse(['success' => false, 'message' => 'Not your turn.'], 409);
@@ -179,15 +203,20 @@ class MatchController extends Controller
             $match->shots = $shots;
             $match->mines = $mines;
 
+            $match->{$role . '_missed'} = 0; // made a move: the missed-turn streak resets
+
             // A fleet with every segment hit is lost (a mine can sink the shooter).
             if ($this->fleetSunk($targetFleet, $this->hitsOn($target, $shots))) {
                 $match->status = 'finished';
                 $match->winner_user_id = Auth::id();
+                $match->ended_reason = 'sunk';
             } elseif ($this->fleetSunk($match->{$role . '_fleet'}, $this->hitsOn($role, $shots))) {
                 $match->status = 'finished';
                 $match->winner_user_id = $match->userIdOf($target);
+                $match->ended_reason = 'sunk';
             } else {
                 $match->turn_user_id = $match->userIdOf($target); // turns alternate every shot, like VS PC
+                $match->turn_started_at = now();
             }
             $match->save();
 
@@ -198,6 +227,14 @@ class MatchController extends Controller
     public function state($code)
     {
         $match = BtlMatch::where('code', $code)->firstOrFail();
+        // Settle any turns that ran out (locked, so two polls can't both skip the same turn).
+        if ($match->status === 'playing' && $this->turnDeadlineMs($match) <= $this->nowMs()) {
+            $match = DB::transaction(function () use ($match) {
+                $locked = BtlMatch::lockForUpdate()->find($match->id);
+                if ($this->settleTimeouts($locked)) $locked->save();
+                return $locked;
+            });
+        }
         $role = $match->roleOf(Auth::id());
         $opp = $role ? BtlMatch::other($role) : null;
         $shots = $match->shots ?: [];
@@ -219,6 +256,12 @@ class MatchController extends Controller
             'guest_ready' => (bool) $match->guest_fleet,
             'my_turn' => $match->status === 'playing' && (int) $match->turn_user_id === (int) Auth::id(),
             'winner_user_id' => $match->winner_user_id,
+            'ended_reason' => $match->ended_reason,
+            'server_now' => $this->nowMs(),
+            'turn_deadline' => $match->status === 'playing' ? $this->turnDeadlineMs($match) : null,
+            'turn_seconds' => $this->turnSeconds(),
+            'max_missed' => $this->maxMissed(),
+            'missed' => ['host' => (int) $match->host_missed, 'guest' => (int) $match->guest_missed],
         ];
 
         if ($role) {
@@ -246,6 +289,45 @@ class MatchController extends Controller
         }
 
         return new JsonResponse(['success' => true, 'data' => $data]);
+    }
+
+    /* ---------------- turn timer ---------------- */
+
+    private function nowMs(): int
+    {
+        return (int) floor(microtime(true) * 1000);
+    }
+
+    private function turnDeadlineMs(BtlMatch $match): int
+    {
+        $started = $match->turn_started_at ? $match->turn_started_at->getTimestamp() * 1000 : $this->nowMs();
+        return $started + $this->turnSeconds() * 1000;
+    }
+
+    // Skip every turn whose time is up (several, if nobody was around), logging
+    // each one; a player reaching the missed-turn limit forfeits. Returns whether
+    // anything changed. Caller saves.
+    private function settleTimeouts(BtlMatch $match): bool
+    {
+        $changed = false;
+        $shots = $match->shots ?: [];
+        while ($match->status === 'playing' && $this->turnDeadlineMs($match) <= $this->nowMs()) {
+            $changed = true;
+            $role = $match->roleOf($match->turn_user_id);
+            $shots[] = ['id' => count($shots) + 1, 'by' => $role, 'r' => null, 'c' => null, 'result' => 'timeout', 'backfire' => null];
+            $missed = (int) $match->{$role . '_missed'} + 1;
+            $match->{$role . '_missed'} = $missed;
+            if ($missed >= $this->maxMissed()) {
+                $match->status = 'finished';
+                $match->winner_user_id = $match->userIdOf(BtlMatch::other($role));
+                $match->ended_reason = 'forfeit';
+            } else {
+                $match->turn_user_id = $match->userIdOf(BtlMatch::other($role));
+                $match->turn_started_at = $match->turn_started_at->copy()->addSeconds($this->turnSeconds());
+            }
+        }
+        if ($changed) $match->shots = $shots;
+        return $changed;
     }
 
     /* ---------------- rules ---------------- */

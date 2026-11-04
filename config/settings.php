@@ -19,4 +19,9 @@ return [
     'max_board'       => 14,
     'min_ships'       => 3,
     'max_ships'       => 7,
+
+    // VS Player turn timer: seconds per turn, and how many missed turns in a
+    // row forfeit the match.
+    'turn_seconds'       => (int) env('BATTLESHIP_TURN_SECONDS', 30),
+    'max_missed_turns'   => (int) env('BATTLESHIP_MAX_MISSED_TURNS', 4),
 ];
