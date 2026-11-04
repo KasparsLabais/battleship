@@ -14,7 +14,8 @@
     "extra" : {
         "laravel": {
             "providers": [
-                "PartyGames\\Battleship\\BattleshipServiceProvider"
+                "PartyGames\\Battleship\\BattleshipServiceProvider",
+                "PartyGames\\Battleship\\RouteServiceProvider"
             ]
         }
     },
