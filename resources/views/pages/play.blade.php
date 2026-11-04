@@ -15,6 +15,7 @@
                     <span class="inline-block border-2 border-main-dark bg-main-light px-2 py-0.5 russo text-[10px] uppercase tracking-wide text-main-dark">{{ $size }}×{{ $size }}</span>
                     <span class="inline-block border-2 border-main-dark bg-main-light px-2 py-0.5 russo text-[10px] uppercase tracking-wide text-main-dark">{{ $ships }} ships</span>
                     @if($mines)<span class="inline-block border-2 border-main-dark bg-pop px-2 py-0.5 russo text-[10px] uppercase tracking-wide text-main-dark">Mines</span>@endif
+                    <span class="inline-block border-2 border-main-dark bg-main-light px-2 py-0.5 russo text-[10px] uppercase tracking-wide text-main-dark">{{ $touch ? 'Ships can touch' : 'No touching' }}</span>
                 </div>
                 <a href="/battleship" class="fira-sans font-bold uppercase text-xs tracking-wide bg-white text-main-dark border-4 border-main-dark shadow-[3px_3px_0_0_#14323B] px-4 py-2 transition-all duration-100 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[5px_5px_0_0_#14323B] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[0px_0px_0_0_#14323B]">&larr; Leave</a>
             </div>
@@ -34,6 +35,13 @@
                 </div>
 
                 <div class="bg-white border-4 border-main-dark shadow-[6px_6px_0_0_#14323B] p-4 flex flex-col gap-4">
+                    <p class="fira-sans text-xs text-main-dark/70 border-2 border-main-dark bg-main-light px-2 py-1.5">
+                        @if($touch)
+                            Ships can sit side by side, but can't overlap.
+                        @else
+                            Ships can't overlap or touch &mdash; keep at least one square of water around each ship, diagonals included.
+                        @endif
+                    </p>
                     <div>
                         <span class="fira-sans text-xs uppercase tracking-widest text-main-dark/60">Fleet</span>
                         <div id="fleet-list" class="flex flex-col gap-2 mt-2"></div>
@@ -120,13 +128,16 @@
 
     <script>
         (function () {
-            const CFG = { mode: '{{ $mode }}', size: {{ $size }}, ships: {{ $ships }}, mines: {{ (int) $mines }} };
+            const CFG = { mode: '{{ $mode }}', size: {{ $size }}, ships: {{ $ships }}, mines: {{ (int) $mines }}, touch: {{ (int) $touch }} };
             const FLEETS = {3:[5,4,3], 4:[5,4,3,2], 5:[5,4,3,3,2], 6:[5,4,3,3,2,2], 7:[5,4,4,3,3,2,2]};
             const SIZE = CFG.size;
             const FLEET = FLEETS[CFG.ships] || FLEETS[5];
             const MINE_COUNT = CFG.mines ? Math.max(2, Math.round(SIZE * SIZE * 0.04)) : 0;
             const key = (r, c) => r + ',' + c;
             const inB = (r, c) => r >= 0 && c >= 0 && r < SIZE && c < SIZE;
+            // Ship ids start at 0, so test occupancy against undefined (a plain
+            // truthiness check treated ship #0 as empty water and let ships overlap).
+            const occupied = (board, r, c) => board.grid[key(r, c)] !== undefined;
 
             function makeBoard() {
                 return { ships: [], grid: {}, shots: new Set(), result: {}, mines: new Set() };
@@ -136,8 +147,18 @@
                 for (let i = 0; i < len; i++) cells.push(horiz ? { r, c: c + i } : { r: r + i, c });
                 return cells;
             }
+            // Ships may never overlap. Unless "ships can touch" was enabled in setup,
+            // they also need a ring of open water: no other ship in any of the 8
+            // neighbouring squares (diagonals included).
             function canPlace(board, cells) {
-                return cells.every(({ r, c }) => inB(r, c) && !board.grid[key(r, c)]);
+                return cells.every(({ r, c }) => {
+                    if (!inB(r, c) || occupied(board, r, c)) return false;
+                    if (CFG.touch) return true;
+                    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+                        if (inB(r + dr, c + dc) && occupied(board, r + dr, c + dc)) return false;
+                    }
+                    return true;
+                });
             }
             function placeShip(board, cells) {
                 const id = board.ships.length;
@@ -145,19 +166,26 @@
                 cells.forEach(({ r, c }) => board.grid[key(r, c)] = id);
                 return id;
             }
+            // Random fleet layout. Picks uniformly among every legal position for each
+            // ship (largest first) and starts over if a ship has nowhere to go.
             function autoFleet(board) {
-                board.ships = []; board.grid = {};
-                for (const len of FLEET) {
-                    let ok = false;
-                    for (let tries = 0; tries < 400 && !ok; tries++) {
-                        const horiz = Math.random() < 0.5;
-                        const r = Math.floor(Math.random() * SIZE);
-                        const c = Math.floor(Math.random() * SIZE);
-                        const cells = shipCellsFrom(r, c, len, horiz);
-                        if (canPlace(board, cells)) { placeShip(board, cells); ok = true; }
+                for (let attempt = 0; attempt < 500; attempt++) {
+                    board.ships = []; board.grid = {};
+                    let ok = true;
+                    for (const len of FLEET) {
+                        const options = [];
+                        for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
+                            for (const horiz of [true, false]) {
+                                const cells = shipCellsFrom(r, c, len, horiz);
+                                if (canPlace(board, cells)) options.push(cells);
+                            }
+                        }
+                        if (!options.length) { ok = false; break; }
+                        placeShip(board, options[Math.floor(Math.random() * options.length)]);
                     }
-                    if (!ok) { return autoFleet(board); } // rare: restart
+                    if (ok) return true;
                 }
+                return false;
             }
             function placeMines(board) {
                 board.mines = new Set();
@@ -165,7 +193,7 @@
                 while (placed < MINE_COUNT && guard++ < 2000) {
                     const r = Math.floor(Math.random() * SIZE), c = Math.floor(Math.random() * SIZE);
                     const k = key(r, c);
-                    if (!board.grid[k] && !board.mines.has(k)) { board.mines.add(k); placed++; }
+                    if (!occupied(board, r, c) && !board.mines.has(k)) { board.mines.add(k); placed++; }
                 }
             }
             const fleetSunk = (b) => b.ships.length > 0 && b.ships.every(s => s.hits.size === s.cells.length);

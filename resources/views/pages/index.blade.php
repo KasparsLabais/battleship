@@ -82,6 +82,15 @@
                             </span>
                         </label>
 
+                        {{-- Ships touching (off by default) --}}
+                        <label class="flex items-start gap-3 border-4 border-main-dark p-3 cursor-pointer bg-main-light">
+                            <input type="checkbox" id="touch-toggle" class="mt-0.5 w-5 h-5 shrink-0 accent-brand">
+                            <span>
+                                <span class="russo text-main-dark text-sm uppercase">Ships can touch</span>
+                                <span class="block fira-sans text-xs text-main-dark/60 mt-0.5">Official rules let ships sit side by side. Leave this off to keep at least one square of open water around every ship (diagonals included). Ships can never overlap.</span>
+                            </span>
+                        </label>
+
                         {{-- Arena (random only) --}}
                         <label id="arena-row" class="hidden items-start gap-3 border-4 border-main-dark p-3 cursor-pointer bg-main-light">
                             <input type="checkbox" id="arena-toggle" class="mt-0.5 w-5 h-5 shrink-0 accent-pop" checked>
@@ -200,6 +209,7 @@
                     size: sizeRange.value,
                     ships: shipsRange.value,
                     mines: document.getElementById('mines-toggle').checked ? 1 : 0,
+                    touch: document.getElementById('touch-toggle').checked ? 1 : 0,
                     arena: 0,
                 });
                 window.location.href = '/btl/play?' + params.toString();

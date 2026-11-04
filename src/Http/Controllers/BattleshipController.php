@@ -32,6 +32,9 @@ class BattleshipController extends Controller
         $ships = (int) $request->get('ships', 5);
         $mines = (int) $request->get('mines', 0) ? 1 : 0;
         $arena = (int) $request->get('arena', 0) ? 1 : 0;
+        // Official rules let ships touch; by default we require open water
+        // between them unless the player opted in on the setup screen.
+        $touch = (int) $request->get('touch', 0) ? 1 : 0;
 
         $size  = max($cfg['min_board'], min($cfg['max_board'], $size));
         $ships = max($cfg['min_ships'], min($cfg['max_ships'], $ships));
@@ -42,6 +45,7 @@ class BattleshipController extends Controller
             'ships' => $ships,
             'mines' => $mines,
             'arena' => $arena,
+            'touch' => $touch,
         ]);
     }
 
