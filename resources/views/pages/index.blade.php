@@ -48,7 +48,8 @@
                                     <div class="fira-sans text-xs text-main-dark/60 mt-0.5">Invite a friend</div>
                                 </button>
                             </div>
-                            <p id="online-note" class="hidden fira-sans text-xs text-main-accent font-bold mt-2">⚓ Online play lands in the next update — pick VS PC to play right now.</p>
+                            <p id="online-note" class="hidden fira-sans text-xs text-main-accent font-bold mt-2">⚓ Random matchmaking lands in a later update — play VS PC, or invite a friend with VS Player.</p>
+                            <p id="player-note" class="hidden fira-sans text-xs text-main-dark/70 mt-2">You'll get a match lobby with a link to send — or invite a friend straight from your friends list.</p>
                         </div>
 
                         {{-- Board size --}}
@@ -79,6 +80,15 @@
                             <span>
                                 <span class="russo text-main-dark text-sm uppercase">Mines</span>
                                 <span class="block fira-sans text-xs text-main-dark/60 mt-0.5">Hidden mines are scattered across the sea. Fire on one and it backfires — a random one of <em>your own</em> ships takes a hit.</span>
+                            </span>
+                        </label>
+
+                        {{-- Ships touching (off by default) --}}
+                        <label class="flex items-start gap-3 border-4 border-main-dark p-3 cursor-pointer bg-main-light">
+                            <input type="checkbox" id="touch-toggle" class="mt-0.5 w-5 h-5 shrink-0 accent-brand">
+                            <span>
+                                <span class="russo text-main-dark text-sm uppercase">Ships can touch</span>
+                                <span class="block fira-sans text-xs text-main-dark/60 mt-0.5">Official rules let ships sit side by side. Leave this off to keep at least one square of open water around every ship (diagonals included). Ships can never overlap.</span>
                             </span>
                         </label>
 
@@ -154,13 +164,14 @@
                     b.classList.toggle('shadow-[4px_4px_0_0_#14323B]', sel);
                     b.querySelectorAll('.russo, .fira-sans').forEach(t => t.classList.toggle('text-white', sel));
                 });
-                const online = opponent !== 'pc';
-                onlineNote.classList.toggle('hidden', !online);
+                const soon = opponent === 'random';
+                onlineNote.classList.toggle('hidden', !soon);
+                document.getElementById('player-note').classList.toggle('hidden', opponent !== 'player');
                 arenaRow.classList.toggle('hidden', opponent !== 'random');
                 arenaRow.classList.toggle('flex', opponent === 'random');
-                startBtn.textContent = online ? 'Coming Soon' : 'Start Battle';
-                startBtn.classList.toggle('opacity-50', online);
-                startBtn.classList.toggle('cursor-not-allowed', online);
+                startBtn.textContent = soon ? 'Coming Soon' : (opponent === 'player' ? 'Create Match' : 'Start Battle');
+                startBtn.classList.toggle('opacity-50', soon);
+                startBtn.classList.toggle('cursor-not-allowed', soon);
             }
             oppBtns.forEach(b => b.addEventListener('click', () => { opponent = b.dataset.opponent; paintOpponent(); }));
 
@@ -194,12 +205,34 @@
 
             // Start
             startBtn.addEventListener('click', () => {
-                if (opponent !== 'pc') return;
+                if (opponent === 'random') return;
+                if (opponent === 'player') {
+                    // Friend match: create the lobby server-side (POST), then invite from there.
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = '/btl/match';
+                    const fields = {
+                        _token: '{{ csrf_token() }}',
+                        size: sizeRange.value,
+                        ships: shipsRange.value,
+                        mines: document.getElementById('mines-toggle').checked ? 1 : 0,
+                        touch: document.getElementById('touch-toggle').checked ? 1 : 0,
+                    };
+                    Object.entries(fields).forEach(([name, value]) => {
+                        const input = document.createElement('input');
+                        input.type = 'hidden'; input.name = name; input.value = value;
+                        form.appendChild(input);
+                    });
+                    document.body.appendChild(form);
+                    form.submit();
+                    return;
+                }
                 const params = new URLSearchParams({
                     mode: 'pc',
                     size: sizeRange.value,
                     ships: shipsRange.value,
                     mines: document.getElementById('mines-toggle').checked ? 1 : 0,
+                    touch: document.getElementById('touch-toggle').checked ? 1 : 0,
                     arena: 0,
                 });
                 window.location.href = '/btl/play?' + params.toString();
